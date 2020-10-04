@@ -56,6 +56,10 @@ func TestMinifyStmt(t *testing.T) {
 		{`x ++`, `x++`},
 		{`x [0 ] --`, `x[0]--`},
 
+		{`x = f()`, `x=f()`},
+		{`x, y = f()`, `x,y=f()`},
+		{`x, y = a, b`, `x,y=a,b`},
+
 		{`{ }`, `{}`},
 		{`{ 1; }`, `{1}`},
 		{`{ 1; 2 }`, `{1;2}`},
@@ -194,6 +198,13 @@ func TestMinifyExpr(t *testing.T) {
 		{`interface{ foo(); bar() }`, `interface{foo();bar()}`},
 		{`interface{ foo(int); bar() (int, error) }`, `interface{foo(int);bar()(int,error)}`},
 		{`interface { Embedded; foo() }`, `interface{Embedded;foo()}`},
+
+		// We need a space between `<` and `-`; otherwise it'll be parsed differently.
+		{`x < -y`, `x< -y`},
+		{`d < -35*Second`, `d< -35*Second`},
+
+		// We need a space between `-` and another `-`; otherwise it'll be parsed differently.
+		{`x - -1`, `x- -1`},
 	}
 
 	var m minifier

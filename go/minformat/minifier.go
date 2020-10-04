@@ -105,9 +105,7 @@ func (m *minifier) printExpr(n ast.Expr) {
 		m.out.WriteByte(']')
 
 	case *ast.BinaryExpr:
-		m.printExpr(n.X)
-		m.out.WriteString(n.Op.String())
-		m.printExpr(n.Y)
+		m.printBinaryExpr(n)
 
 	case *ast.UnaryExpr:
 		m.out.WriteString(n.Op.String())
@@ -229,12 +227,18 @@ func (m *minifier) printStmt(n ast.Stmt) {
 		}
 
 	case *ast.AssignStmt:
-		for _, lhs := range n.Lhs {
+		for i, lhs := range n.Lhs {
 			m.printExpr(lhs)
+			if i != len(n.Lhs)-1 {
+				m.out.WriteByte(',')
+			}
 		}
 		m.out.WriteString(n.Tok.String())
-		for _, rhs := range n.Rhs {
+		for i, rhs := range n.Rhs {
 			m.printExpr(rhs)
+			if i != len(n.Rhs)-1 {
+				m.out.WriteByte(',')
+			}
 		}
 
 	case *ast.IncDecStmt:
@@ -479,6 +483,24 @@ func (m *minifier) printGenDecl(n *ast.GenDecl) {
 	if n.Rparen != token.NoPos {
 		m.out.WriteByte(')')
 	}
+}
+
+func (m *minifier) printBinaryExpr(n *ast.BinaryExpr) {
+	// Handle `x < -y` and `x - -y`.
+	if n.Op == token.LSS || n.Op == token.SUB {
+		y := leftmostExpr(n.Y)
+		if y, ok := y.(*ast.UnaryExpr); ok && y.Op == token.SUB {
+			m.printExpr(n.X)
+			m.out.WriteString(n.Op.String())
+			m.out.WriteByte(' ')
+			m.printExpr(n.Y)
+			return
+		}
+	}
+
+	m.printExpr(n.X)
+	m.out.WriteString(n.Op.String())
+	m.printExpr(n.Y)
 }
 
 func (m *minifier) printFuncType(n *ast.FuncType) {
