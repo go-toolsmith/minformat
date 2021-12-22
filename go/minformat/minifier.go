@@ -139,6 +139,9 @@ func (m *minifier) printExpr(n ast.Expr) {
 				m.out.WriteByte(',')
 			}
 		}
+		if n.Ellipsis != token.NoPos {
+			m.out.WriteString("...")
+		}
 		m.out.WriteByte(')')
 
 	case *ast.SliceExpr:
@@ -388,6 +391,13 @@ func (m *minifier) printStmt(n ast.Stmt) {
 		}
 		m.printExpr(n.Cond)
 		m.printBlockStmt(n.Body)
+		if n.Else != nil {
+			m.out.WriteString("else")
+			if _, ok := n.Else.(*ast.IfStmt); ok {
+				m.out.WriteByte(' ')
+			}
+			m.printStmt(n.Else)
+		}
 
 	case *ast.BlockStmt:
 		m.printBlockStmt(n)
@@ -486,20 +496,29 @@ func (m *minifier) printGenDecl(n *ast.GenDecl) {
 }
 
 func (m *minifier) printBinaryExpr(n *ast.BinaryExpr) {
+	spaceBeforeY := false
+
 	// Handle `x < -y` and `x - -y`.
 	if n.Op == token.LSS || n.Op == token.SUB {
 		y := leftmostExpr(n.Y)
 		if y, ok := y.(*ast.UnaryExpr); ok && y.Op == token.SUB {
-			m.printExpr(n.X)
-			m.out.WriteString(n.Op.String())
-			m.out.WriteByte(' ')
-			m.printExpr(n.Y)
-			return
+			spaceBeforeY = true
+		}
+	}
+
+	// Handle `x & ^y` so we don't output it as `x&^y`.
+	if n.Op == token.AND {
+		y, ok := n.Y.(*ast.UnaryExpr)
+		if ok && y.Op == token.XOR {
+			spaceBeforeY = true
 		}
 	}
 
 	m.printExpr(n.X)
 	m.out.WriteString(n.Op.String())
+	if spaceBeforeY {
+		m.out.WriteByte(' ')
+	}
 	m.printExpr(n.Y)
 }
 
@@ -553,6 +572,9 @@ func (m *minifier) printFieldList(n *ast.FieldList, sep byte) {
 			m.out.WriteByte(' ')
 		}
 		m.printExpr(field.Type)
+		if field.Tag != nil {
+			m.out.WriteString(field.Tag.Value)
+		}
 		if j != len(n.List)-1 {
 			m.out.WriteByte(sep)
 		}

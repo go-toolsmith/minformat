@@ -2,10 +2,20 @@ package minformat
 
 import (
 	"bytes"
+	"fmt"
+	"go/ast"
+	"go/format"
+	"go/parser"
 	"go/token"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-toolsmith/strparse"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestMinifyDecl(t *testing.T) {
@@ -19,6 +29,8 @@ func TestMinifyDecl(t *testing.T) {
 
 		{`type x = int`, `type x=int`},
 		{`type (a [2] int; b [ ]int)`, `type(a [2]int;b []int)`},
+
+		{`type _ struct { x int "struct tag" }`, `type _ struct{x int"struct tag"}`},
 
 		{`const x, y = 1, 2`, `const x,y=1,2`},
 		{`const (x = 1; y = 2)`, `const(x=1;y=2)`},
@@ -78,6 +90,8 @@ func TestMinifyStmt(t *testing.T) {
 
 		{`if cond { return nil }`, `if cond{return nil}`},
 		{`if x := f(); !x { return nil }`, `if x:=f();!x{return nil}`},
+		{`if cond { f(); } else { g(); }`, `if cond{f()}else{g()}`},
+		{`if cond { f(); } else if cond { g(); }`, `if cond{f()}else if cond{g()}`},
 
 		{`switch {default: return 1}`, `switch{default:return 1}`},
 		{`switch tag {case 1, 2: return 0}`, `switch tag{case 1,2:return 0}`},
@@ -151,6 +165,10 @@ func TestMinifyExpr(t *testing.T) {
 		{`[] int`, `[]int`},
 		{`[ 2 ] int`, `[2]int`},
 
+		{`x &^ y`, `x&^y`},
+		{`x & ^y`, `x& ^y`},
+		{`x & (^y)`, `x&(^y)`},
+
 		{`func () `, `func()`},
 		{`func ( int ) (int, int)`, `func(int)(int,int)`},
 		{`func ( int, int ) (int)`, `func(int,int)int`},
@@ -183,6 +201,7 @@ func TestMinifyExpr(t *testing.T) {
 		{`f(1, 2)`, `f(1,2)`},
 		{`f(1, g(2, 3))`, `f(1,g(2,3))`},
 		{`f( 1 )( 2, 3 )`, `f(1)(2,3)`},
+		{`foo(1, args...)`, `foo(1,args...)`},
 
 		{`struct { }`, `struct{}`},
 		{`struct{ int }`, `struct{int}`},
@@ -217,4 +236,70 @@ func TestMinifyExpr(t *testing.T) {
 			t.Errorf("minify %s:\nhave: %q\nwant: %q", test.src, have, test.want)
 		}
 	}
+}
+
+func TestGoroot(t *testing.T) {
+	var goroot string
+	{
+		out, err := exec.Command("go", "env", "GOROOT").CombinedOutput()
+		if err != nil {
+			t.Fatal(err)
+		}
+		goroot = strings.TrimSpace(string(out))
+	}
+
+	visitFile := func(filename string) error {
+		fset := token.NewFileSet()
+		fileContents, err := os.ReadFile(filename)
+		if err != nil {
+			return err
+		}
+		f, err := parser.ParseFile(fset, filename, fileContents, 0)
+		if err != nil {
+			return nil
+		}
+		var minified bytes.Buffer
+		if err := Node(&minified, fset, f); err != nil {
+			return err
+		}
+		fset2 := token.NewFileSet()
+		f2, err := parser.ParseFile(fset2, filename, minified.Bytes(), 0)
+		if err != nil {
+			return fmt.Errorf("re-parse minified: %w", err)
+		}
+		if diff := astDiff(f, f2); diff != "" {
+			return fmt.Errorf("minified code produced different AST:\n%s", diff)
+		}
+		return nil
+	}
+
+	srcDir := filepath.Join(goroot, "src")
+	err := filepath.WalkDir(srcDir, func(path string, info fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(info.Name(), ".go") {
+			return nil
+		}
+		if err := visitFile(path); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func astDiff(x, y ast.Node) string {
+	var buf bytes.Buffer
+	format.Node(&buf, token.NewFileSet(), x)
+	s1 := buf.String()
+	buf.Reset()
+	format.Node(&buf, token.NewFileSet(), y)
+	s2 := buf.String()
+	return cmp.Diff(s1, s2)
 }
