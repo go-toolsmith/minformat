@@ -150,7 +150,7 @@ func (m *minifier) printExpr(n ast.Expr) {
 		if n.Low != nil {
 			m.printExpr(n.Low)
 		}
-		m.out.WriteRune(':')
+		m.out.WriteByte(':')
 		if n.High != nil {
 			m.printExpr(n.High)
 		}
@@ -587,4 +587,13 @@ func (m *minifier) panicUnhandled(fn string, n interface{}) {
 		panic(fmt.Sprintf("%s:%d: %s: unhandled %T", pos.Filename, pos.Line, fn, n))
 	}
 	panic(fmt.Sprintf("<?>: %s: unhandled %T", fn, n))
+}
+
+func leftmostExpr(n ast.Expr) ast.Expr {
+	switch n := n.(type) {
+	case *ast.BinaryExpr:
+		return leftmostExpr(n.X)
+	default:
+		return n
+	}
 }

@@ -256,7 +256,7 @@ func TestGoroot(t *testing.T) {
 		}
 		f, err := parser.ParseFile(fset, filename, fileContents, 0)
 		if err != nil {
-			return nil
+			return err
 		}
 		var minified bytes.Buffer
 		if err := Node(&minified, fset, f); err != nil {
