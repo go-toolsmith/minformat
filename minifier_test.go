@@ -256,7 +256,7 @@ func TestGoroot(t *testing.T) {
 		}
 		f, err := parser.ParseFile(fset, filename, fileContents, 0)
 		if err != nil {
-			return nil
+			return err
 		}
 		var minified bytes.Buffer
 		if err := Node(&minified, fset, f); err != nil {
@@ -265,7 +265,7 @@ func TestGoroot(t *testing.T) {
 		fset2 := token.NewFileSet()
 		f2, err := parser.ParseFile(fset2, filename, minified.Bytes(), 0)
 		if err != nil {
-			return fmt.Errorf("re-parse minified: %w", err)
+			return fmt.Errorf("re-parse minified: %w\nminified: %s", err, minified.String())
 		}
 		if diff := astDiff(f, f2); diff != "" {
 			return fmt.Errorf("minified code produced different AST:\n%s", diff)
@@ -282,6 +282,18 @@ func TestGoroot(t *testing.T) {
 			return nil
 		}
 		if !strings.HasSuffix(info.Name(), ".go") {
+			return nil
+		}
+		// Skip some testdata dirs where not all files can be parsed.
+		// TODO(cristaloleg): skip file when we cannot parse it with go/parser.
+		if strings.Contains(path, "src/cmd/compile/internal/syntax/testdata") ||
+			strings.Contains(path, "src/cmd/compile/internal/types2/testdata") ||
+			strings.Contains(path, "src/cmd/go/internal/modindex/testdata") ||
+			strings.Contains(path, "src/cmd/go/parser/testdata") ||
+			strings.Contains(path, "src/cmd/internal/modindex/testdata") ||
+			strings.Contains(path, "src/go/parser/testdata") ||
+			strings.Contains(path, "src/internal/types/testdata") ||
+			strings.Contains(path, "src/cmd/compile/internal/syntax/testdata/smoketest.go") {
 			return nil
 		}
 		if err := visitFile(path); err != nil {

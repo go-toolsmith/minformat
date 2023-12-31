@@ -150,7 +150,7 @@ func (m *minifier) printExpr(n ast.Expr) {
 		if n.Low != nil {
 			m.printExpr(n.Low)
 		}
-		m.out.WriteRune(':')
+		m.out.WriteByte(':')
 		if n.High != nil {
 			m.printExpr(n.High)
 		}
@@ -216,6 +216,9 @@ func (m *minifier) printExpr(n ast.Expr) {
 
 	case *ast.InterfaceType:
 		m.printInterfaceType(n)
+
+	case *ast.IndexListExpr:
+		m.printIndexListExpr(n)
 
 	default:
 		m.panicUnhandled("printExpr", n)
@@ -476,6 +479,11 @@ func (m *minifier) printGenDecl(n *ast.GenDecl) {
 			}
 		case *ast.TypeSpec:
 			m.out.WriteString(spec.Name.Name)
+			if spec.TypeParams != nil {
+				m.out.WriteString("[")
+				m.printFieldList(spec.TypeParams, ',')
+				m.out.WriteString("]")
+			}
 			if spec.Assign != token.NoPos {
 				m.out.WriteByte('=')
 			} else {
@@ -514,6 +522,12 @@ func (m *minifier) printBinaryExpr(n *ast.BinaryExpr) {
 		}
 	}
 
+	// Handle `x / Y` so we don't output it as `x/Y` (where Y is an expression).
+	// TODO(cristaloleg): handle only a case when we dereference Y: `x / *y`.
+	if n.Op == token.QUO {
+		spaceBeforeY = true
+	}
+
 	m.printExpr(n.X)
 	m.out.WriteString(n.Op.String())
 	if spaceBeforeY {
@@ -523,6 +537,11 @@ func (m *minifier) printBinaryExpr(n *ast.BinaryExpr) {
 }
 
 func (m *minifier) printFuncType(n *ast.FuncType) {
+	if n.TypeParams != nil {
+		m.out.WriteString("[")
+		m.printFieldList(n.TypeParams, ',')
+		m.out.WriteString("]")
+	}
 	m.out.WriteString("(")
 	m.printFieldList(n.Params, ',')
 	m.out.WriteString(")")
@@ -560,6 +579,20 @@ func (m *minifier) printInterfaceType(n *ast.InterfaceType) {
 	m.out.WriteByte('}')
 }
 
+func (m *minifier) printIndexListExpr(n *ast.IndexListExpr) {
+	m.printExpr(n.X)
+	m.out.WriteString("[")
+
+	for i, ind := range n.Indices {
+		if i > 0 {
+			m.out.WriteByte(',')
+		}
+		m.printExpr(ind)
+	}
+
+	m.out.WriteByte(']')
+}
+
 func (m *minifier) printFieldList(n *ast.FieldList, sep byte) {
 	for j, field := range n.List {
 		for j, ident := range field.Names {
@@ -587,4 +620,13 @@ func (m *minifier) panicUnhandled(fn string, n interface{}) {
 		panic(fmt.Sprintf("%s:%d: %s: unhandled %T", pos.Filename, pos.Line, fn, n))
 	}
 	panic(fmt.Sprintf("<?>: %s: unhandled %T", fn, n))
+}
+
+func leftmostExpr(n ast.Expr) ast.Expr {
+	switch n := n.(type) {
+	case *ast.BinaryExpr:
+		return leftmostExpr(n.X)
+	default:
+		return n
+	}
 }
