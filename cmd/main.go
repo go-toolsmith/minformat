@@ -23,7 +23,7 @@ func main() {
 		panic(err)
 	}
 
-	if err := os.WriteFile("minified.go", res, os.ModePerm); err != nil {
+	if _, err := os.Stdout.Write(res); err != nil {
 		panic(err)
 	}
 }
